@@ -9,13 +9,26 @@
 #define M0_I2C_SDA 39  // 通讯
 #define M0_I2C_SCL 40   // 时钟
 // 右轮
-// 自定义第二路 I2C 引脚
+
 #define M1_I2C_SDA 41  // 通讯
 #define M1_I2C_SCL 42  // 时钟
+#define MOVING_AVERAGE_WINDOW_SIZE 5 // 定义移动平均滤波的窗口大小（例如，取前 n 个数据点的平均）
 
 // 添加LED引脚定义，用于显示状态
 const int ledPin1 = 9;  // 0.5HZ
 const int ledPin2 = 10; // 0.2HZ
+float Balance_Angle_raw = 0.54;                            // 机械平衡角度
+const int leftMotorOffset = 0.06, rightMotorOffset = 0.07; // 左右轮的启动扭矩值，pm到一定电压马达才开的转动.
+float ENERGY = 3;                                          // 前进后退倾角，控制进后退速度
+float kp = 8.8, ki = 0.19, kd = 0.29;                      // 根据调试设置kp ki kd的默认值，kp:8.8   ki:0.19   kd:0.29(平衡小车)
+float turn_kp = 0.1;                                       // 转向kp值
+float Keep_Angle, bias, integrate;                         // 保持角度，角度偏差，偏差积分变量
+float AngleX, GyroX, GyroZ;                                // mpu6050输出的角度值为浮点数，两位有效小数
+float vertical_PWM, turn_PWM, PWM, L_PWM, R_PWM;           // 各种PWM计算值
+float turn_spd = 0;                                        // 转向Z角速度值，初始值为0
+float turn_ENERGY = 300;                                   // 转向Z角速度增加值值
+float gyroZBuffer[MOVING_AVERAGE_WINDOW_SIZE];             // 全局数组用于存储最近的 n 个角速度值
+int bufferIndex = 0;
 
 // MagneticSensorI2C sensor = MagneticSensorI2C(AS5600_I2C);//采用I2C通信，将AS5600的SDA、SCL引脚与ESP32对应的SDA、SCL连接，就无须定义引脚了，如果要用其他引脚也可以，但是需要重新定义
 // 左轮
@@ -36,6 +49,7 @@ BLDCDriver3PWM driver_1 = BLDCDriver3PWM(15,16,17,48);//PWM引脚为25，32，33
 float target_angle_1 = 0;//定义角度变量，也可以是扭矩，也可以是速度
 float target_angle_2 = 0;//定义角度变量，也可以是扭矩，也可以是速度
 
+
 // 实例化
 Commander command = Commander(Serial);//使用串口发送命令
 void doTarget1(char* cmd) { command.scalar(&target_angle_1, cmd); }
@@ -46,7 +60,8 @@ unsigned long previousMillis2 = 0;
 const long interval1 = 500; // 500ms 切换一次，实现 1Hz 闪烁（亮0.5s + 灭0.5s）
 const long interval2 = 250; // 500ms 切换一次，实现 1Hz 闪烁（亮0.5s + 灭0.5s）
 
-// BluetoothSerial SerialBT; // 实例化蓝牙
+char flag = 's'; // 控制左转右转的标签
+BluetoothSerial SerialBT; // 实例化蓝牙
 void io_init()
 {
 // 初始化LED引脚为输出模式
@@ -54,6 +69,97 @@ void io_init()
   pinMode(ledPin2, OUTPUT);
   digitalWrite(ledPin1,LOW);
   digitalWrite(ledPin1,LOW);
+}
+// 传感器初始化
+void serial_debug() // 蓝牙串口调试函数，在线调试PID值
+{
+    if (SerialBT.available() > 0)
+    {
+        char DATA = SerialBT.read();
+        delay(5);
+        switch (DATA)
+        {
+        /*---机械平衡角度调整-----*/
+        case 'u':
+            Keep_Angle += 0.01;
+            break;
+        case 'd':
+            Keep_Angle -= 0.01;
+            break;
+        /*----直立平衡PID调整-----*/
+        case '0':
+            kp -= 0.1;
+            break;
+        case '1':
+            kp += 0.1;
+            break;
+        case '2':
+            ki -= 0.01;
+            break;
+        case '3':
+            ki += 0.01;
+            break;
+        case '4':
+            kd -= 0.01;
+            break;
+        case '5':
+            kd += 0.01;
+            break;
+        case '6':
+            turn_kp -= 0.01;
+            break;
+        case '7':
+            turn_kp += 0.01;
+            break;
+
+        /*-----控制程序-----*/
+        case 's':
+            flag = 's';
+            Keep_Angle = Balance_Angle_raw;
+            turn_spd = 0;
+            break; // 调节物理平衡点为机械平衡角度值，原地平衡
+        case 'f':  // 前进
+            flag = 'f';
+            Keep_Angle = Balance_Angle_raw + ENERGY;
+            turn_spd = 0;
+            break;
+        case 'b': // 后退
+            flag = 'b';
+            Keep_Angle = Balance_Angle_raw - ENERGY;
+            turn_spd = 0;
+            break;
+        case 'z': // 不转向
+            flag = 'z';
+            turn_spd = 0;
+            break;
+        case 'l': // 左转
+            flag = 'l';
+            turn_spd = turn_ENERGY;
+            break;
+        case 'r': // 右转
+            flag = 'r';
+            turn_spd = -turn_ENERGY;
+            break;
+        }
+        if (kp < 0)
+            kp = 0;
+        if (ki < 0)
+            ki = 0;
+        if (kd < 0)
+            kd = 0;
+
+        SerialBT.print("Keep_Angle:");
+        SerialBT.println(Keep_Angle);
+        SerialBT.print("   kp:");
+        SerialBT.print(kp);
+        SerialBT.print("   ki:");
+        SerialBT.print(ki);
+        SerialBT.print("   kd:");
+        SerialBT.println(kd);
+        SerialBT.print("  turn_kp:");
+        SerialBT.println(turn_kp);
+        SerialBT.println("--------------------");
+    }
 }
 
 void sensor_init()
@@ -65,13 +171,12 @@ void sensor_init()
     mpu6050.begin();               // 引脚已经定义，即I2C_0的引脚
     mpu6050.calcGyroOffsets(true); // 自动校正打开
 }
-// 移动平均滤波函数
+// 移动窗口的均值滤波，平均滤波函数
 float movingAverageFilter(float newValue)
 {
     // 将新值添加到缓冲区
     gyroZBuffer[bufferIndex] = newValue;
     bufferIndex = (bufferIndex + 1) % MOVING_AVERAGE_WINDOW_SIZE;
-
     // 计算平均值
     float sum = 0.0;
     for (int i = 0; i < MOVING_AVERAGE_WINDOW_SIZE; ++i)
@@ -81,6 +186,28 @@ float movingAverageFilter(float newValue)
     return sum / MOVING_AVERAGE_WINDOW_SIZE;
 }
 
+// 转向的PWM
+void angle_pwm_calculation()
+{ 
+    GyroZ = mpu6050.getGyroZ();
+    float filteredGyroZ = movingAverageFilter(GyroZ); // 对角速度值进行移动平均滤波
+    turn_PWM = turn_kp * (turn_spd - filteredGyroZ);  
+}
+// 
+void verical_pwm_caculation()
+{                                                           // 直立PID计算PWM
+    AngleX = mpu6050.getAngleX();                           // 陀螺仪获得X方向转动角度
+    GyroX = mpu6050.getGyroX();                             // 陀螺仪获得X方向角速度
+    // float Keep_Angle, bias, integrate;                   // 保持角度，角度偏差，偏差积分变量
+    bias = AngleX - Keep_Angle;                             // 计算角度偏差，bias为小车角度与结构静态平衡角度的差值
+    integrate += bias;                                      // 偏差的积分，integrate为全局变量，一直积累
+    integrate = constrain(integrate, -1000, 1000);          // 限定误差积分的最大最小值
+    vertical_PWM = kp * bias + ki * integrate + kd * GyroX; // 得到PID调节后的值
+    /*=---通过陀螺仪返回数据计算，前倾陀螺仪X轴为正，后仰陀螺仪X轴为负。前倾车前进，后仰车后退，保持直立。
+    但可能为了直立，车会随时移动。*/
+}
+
+// 电机初始化
 void motor_init()
 {
   // 让电机链接传感器
@@ -129,9 +256,10 @@ void motor_init()
   motor_1.init();//电机初始化
   motor_1.initFOC();//传感器校正和启动FOC
 }
-
+// 初始化
 void setup() 
 {//初始化
+  SerialBT.begin("ESP32car"); // 蓝牙设备的名称
   // IO引脚初始化
   io_init();
   // 传感器初始化
@@ -151,16 +279,30 @@ void setup()
 
 // 主循环
 void loop() {
+    serial_debug();
     // 非阻塞 LED 闪烁：每 500ms 翻转一次状态
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis1 >= interval1) {
     previousMillis1 = currentMillis;
     digitalWrite(ledPin1, !digitalRead(ledPin1)); // 翻转 LED 状态
+    Serial.print("-----Xangle->");
+    Serial.print(mpu6050.getAngleX());
+    Serial.print("-----XangleSpeed->");
+    Serial.print(mpu6050.getGyroX());
+    Serial.print("-----Yangle->");
+    Serial.print(mpu6050.getAngleY());
+    Serial.print("-----YangleSpeed->");
+    Serial.print(mpu6050.getGyroY());
   }
   if (currentMillis - previousMillis2 >= interval2) {
     previousMillis2 = currentMillis;
     digitalWrite(ledPin2, !digitalRead(ledPin2)); // 翻转 LED 状态
+
   }
+  mpu6050.update(); // 陀螺仪刷新
+  // verical_pwm_caculation(); // 直立PWM计算
+
+   
   sensor_0.update();
   sensor_1.update();
   motor_0.loopFOC();//启动，使上劲
