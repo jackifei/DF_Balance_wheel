@@ -2,7 +2,7 @@
 #include <MPU6050_tockn.h> //磁罗盘库
 #include <Wire.h>          //I2C库
 #include "SimpleFOC.h"     //电机库
-#include "BluetoothSerial.h"
+// #include "BluetoothSerial.h"
 
 // 左轮
 // 自定义第一路 I2C 引脚
@@ -61,7 +61,8 @@ const long interval1 = 500; // 500ms 切换一次，实现 1Hz 闪烁（亮0.5s 
 const long interval2 = 250; // 500ms 切换一次，实现 1Hz 闪烁（亮0.5s + 灭0.5s）
 
 char flag = 's'; // 控制左转右转的标签
-BluetoothSerial SerialBT; // 实例化蓝牙
+
+//BluetoothSerial SerialBT; // 实例化蓝牙
 void io_init()
 {
 // 初始化LED引脚为输出模式
@@ -71,96 +72,6 @@ void io_init()
   digitalWrite(ledPin1,LOW);
 }
 // 传感器初始化
-void serial_debug() // 蓝牙串口调试函数，在线调试PID值
-{
-    if (SerialBT.available() > 0)
-    {
-        char DATA = SerialBT.read();
-        delay(5);
-        switch (DATA)
-        {
-        /*---机械平衡角度调整-----*/
-        case 'u':
-            Keep_Angle += 0.01;
-            break;
-        case 'd':
-            Keep_Angle -= 0.01;
-            break;
-        /*----直立平衡PID调整-----*/
-        case '0':
-            kp -= 0.1;
-            break;
-        case '1':
-            kp += 0.1;
-            break;
-        case '2':
-            ki -= 0.01;
-            break;
-        case '3':
-            ki += 0.01;
-            break;
-        case '4':
-            kd -= 0.01;
-            break;
-        case '5':
-            kd += 0.01;
-            break;
-        case '6':
-            turn_kp -= 0.01;
-            break;
-        case '7':
-            turn_kp += 0.01;
-            break;
-
-        /*-----控制程序-----*/
-        case 's':
-            flag = 's';
-            Keep_Angle = Balance_Angle_raw;
-            turn_spd = 0;
-            break; // 调节物理平衡点为机械平衡角度值，原地平衡
-        case 'f':  // 前进
-            flag = 'f';
-            Keep_Angle = Balance_Angle_raw + ENERGY;
-            turn_spd = 0;
-            break;
-        case 'b': // 后退
-            flag = 'b';
-            Keep_Angle = Balance_Angle_raw - ENERGY;
-            turn_spd = 0;
-            break;
-        case 'z': // 不转向
-            flag = 'z';
-            turn_spd = 0;
-            break;
-        case 'l': // 左转
-            flag = 'l';
-            turn_spd = turn_ENERGY;
-            break;
-        case 'r': // 右转
-            flag = 'r';
-            turn_spd = -turn_ENERGY;
-            break;
-        }
-        if (kp < 0)
-            kp = 0;
-        if (ki < 0)
-            ki = 0;
-        if (kd < 0)
-            kd = 0;
-
-        SerialBT.print("Keep_Angle:");
-        SerialBT.println(Keep_Angle);
-        SerialBT.print("   kp:");
-        SerialBT.print(kp);
-        SerialBT.print("   ki:");
-        SerialBT.print(ki);
-        SerialBT.print("   kd:");
-        SerialBT.println(kd);
-        SerialBT.print("  turn_kp:");
-        SerialBT.println(turn_kp);
-        SerialBT.println("--------------------");
-    }
-}
 
 void sensor_init()
 {
@@ -259,7 +170,7 @@ void motor_init()
 // 初始化
 void setup() 
 {//初始化
-  SerialBT.begin("ESP32car"); // 蓝牙设备的名称
+ // SerialBT.begin("ESP32car"); // 蓝牙设备的名称
   // IO引脚初始化
   io_init();
   // 传感器初始化
@@ -279,7 +190,7 @@ void setup()
 
 // 主循环
 void loop() {
-    serial_debug();
+    //serial_debug();
     // 非阻塞 LED 闪烁：每 500ms 翻转一次状态
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis1 >= interval1) {
