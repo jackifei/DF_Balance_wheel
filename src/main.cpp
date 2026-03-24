@@ -18,10 +18,10 @@
 const int ledPin1 = 9;  // 0.5HZ
 const int ledPin2 = 10; // 0.2HZ
 // 参数设置
-float Balance_Angle_raw = 0.54;                            // 机械平衡角度
-const int leftMotorOffset = 0.06, rightMotorOffset = 0.07; // 左右轮的启动扭矩值，pm到一定电压马达才开的转动.
+float Balance_Angle_raw = 0.0;                            // 机械平衡角度
+const int leftMotorOffset = 0.08, rightMotorOffset = 0.08; // 左右轮的启动扭矩值，pm到一定电压马达才开的转动.
 float ENERGY = 3;                                          // 前进后退倾角，控制进后退速度
-float kp = 8.8, ki = 0.19, kd = 0.29;                      // 根据调试设置kp ki kd的默认值，kp:8.8   ki:0.19   kd:0.29(平衡小车)
+float kp = 5.5, ki = 0.20, kd = 0.17;                      // 根据调试设置kp ki kd的默认值，kp:8.8   ki:0.19   kd:0.29(平衡小车)
 float turn_kp = 0.1;                                       // 转向kp值
 float Keep_Angle, bias, integrate;                         // 保持角度，角度偏差，偏差积分变量
 float AngleX, GyroX, GyroZ;                                // mpu6050输出的角度值为浮点数，两位有效小数
@@ -208,6 +208,7 @@ void handleCommand()
   char DATA = cmdStr.charAt(0); // 只取第一个字符
   Serial.print("HTTP CMD: ");
   Serial.println(DATA);
+  
 
   // ========== 原 switch 逻辑移植 ==========
   switch (DATA)
@@ -215,36 +216,47 @@ void handleCommand()
   /*---机械平衡角度调整-----*/
   case 'u':
     Keep_Angle += 0.01;
+    Serial.println(Keep_Angle);
     break;
   case 'd':
     Keep_Angle -= 0.01;
+    Serial.println(Keep_Angle);
     break;
 
   /*----直立平衡PID调整-----*/
   case '0':
     kp -= 0.1;
+    Serial.println(kp);
     break;
   case '1':
     kp += 0.1;
+    Serial.println(kp);
     break;
   case '2':
     ki -= 0.01;
+    Serial.println(ki);
     break;
   case '3':
     ki += 0.01;
+    Serial.println(ki);
     break;
   case '4':
     kd -= 0.01;
+    Serial.println(kd);
     break;
   case '5':
     kd += 0.01;
+    Serial.println(kd);
     break;
   case '6':
     turn_kp -= 0.01;
+    Serial.println(turn_kp);
     break;
   case '7':
     turn_kp += 0.01;
+    Serial.println(turn_kp);
     break;
+
 
   /*-----控制程序-----*/
   case 's':
@@ -351,12 +363,12 @@ void loop()
   {
     previousMillis1 = currentMillis;
     digitalWrite(ledPin1, !digitalRead(ledPin1)); // 翻转 LED 状态
-    Serial.print("-----Xangle->");
-    Serial.print(mpu6050.getAngleX());
+    // Serial.print("-----Xangle->");
+    // Serial.print(mpu6050.getAngleX());
     // Serial.print("-----XangleSpeed->");
     // Serial.print(mpu6050.getGyroX());
-    Serial.print("-----Yangle->");
-    Serial.print(mpu6050.getAngleY());
+    // Serial.print("-----Yangle->");
+    // Serial.print(mpu6050.getAngleY());
     // Serial.print("-----YangleSpeed->");
     // Serial.print(mpu6050.getGyroY());
   }
@@ -366,51 +378,61 @@ void loop()
     digitalWrite(ledPin2, !digitalRead(ledPin2)); // 翻转 LED 状态
   }
 
-  verical_pwm_caculation();  // 直立PWM计算
-  PWM = vertical_PWM;        // 电机扭矩值等于经PID计算后的值
+  // verical_pwm_caculation();  // 直立PWM计算
+  AngleX = mpu6050.getAngleY(); // 陀螺仪获得Y方向转动角度
+  GyroX = mpu6050.getGyroY();   // 陀螺仪获得Y方向角速度，需要根据陀螺仪的安装姿态来确定使用X还是使用Y
+  // float Keep_Angle, bias, integrate;                   // 保持角度，角度偏差，偏差积分变量
+  bias = AngleX - Keep_Angle;                             // 计算角度偏差，bias为小车角度与结构静态平衡角度的差值
+  integrate += bias;                                      // 偏差的积分，integrate为全局变量，一直积累
+  integrate = constrain(integrate, -1000, 1000);          // 限定误差积分的最大最小值
+  vertical_PWM = kp * bias + ki * integrate + kd * GyroX; // 得到PID调节后的值
+                                                          /*=---通过陀螺仪返回数据计算，前倾陀螺仪X轴为正，后仰陀螺仪X轴为负。前倾车前进，后仰车后退，保持直立。
+                                                          但可能为了直立，车会随时移动。*/
+  PWM = -vertical_PWM;        // 电机扭矩值等于经PID计算后的值
                              // angle_pwm_calculation();  // 转向PWM计算
   motor_0.loopFOC();         // 启动，使上劲
   motor_1.loopFOC();         // 启动，使上劲
 
-  // PWM = constrain(PWM, -60, 60); // 此时PWM还是角度值,限定在-60到60之间
-  // if (PWM > 0)
-  // {
-  //   L_PWM = PWM + leftMotorOffset; // 加上电机死区扭矩
-  //   R_PWM = PWM + rightMotorOffset;
-  // }
-  // if (PWM < 0)
-  // {
-  //   L_PWM = PWM - leftMotorOffset; // 反向转动也需要加上电机死区
-  //   R_PWM = PWM - rightMotorOffset;
-  // }
-  // // L_PWM -= turn_PWM; // 加上转动角速度值
-  // // R_PWM += turn_PWM;
-  // L_PWM = constrain(L_PWM, -200, 200);
-  // R_PWM = constrain(R_PWM, -200, 200);
-  //   if (AngleX > 45 || AngleX < -45)
-  //   { // 小车倾角过大，已倒下，停止转动；
-  //       motor_0.move(0);
-  //       motor_1.move(0);
-  //   }
-  //   else
-  //   {
-  //     target_angle_1 = static_cast<float>(L_PWM) / 180 * 3.14; // 把陀螺仪MPU6050获得的角度转换为弧度赋值给电机
-  //     target_angle_2 = static_cast<float>(R_PWM) / 180 * 3.14;
-  //     if (PWM > 0)
-  //     {
-  //         target_angle_1 = target_angle_1 + leftMotorOffset; // 加上电机死区扭矩
-  //         target_angle_2 = target_angle_2 + rightMotorOffset;
-  //     }
-  //     if (PWM < 0)
-  //     {
-  //         target_angle_1 = target_angle_1 - leftMotorOffset; // 反向转动也需要加上电机死区
-  //         target_angle_2 = target_angle_2 - rightMotorOffset;
-  //     }
-  //     motor_0.move(target_angle_1); // 实际这是扭矩值
-  //     motor_1.move(target_angle_2);
-  //   }
-
-  motor_0.move(0.1);
-  motor_1.move(0.1);
+  PWM = constrain(PWM, -60, 60); // 此时PWM还是角度值,限定在-60到60之间
+  if (PWM > 0)
+  {
+    L_PWM = PWM + leftMotorOffset; // 加上电机死区扭矩
+    R_PWM = PWM + rightMotorOffset;
+  }
+  if (PWM < 0)
+  {
+    L_PWM = PWM - leftMotorOffset; // 反向转动也需要加上电机死区
+    R_PWM = PWM - rightMotorOffset;
+  }
+  // L_PWM -= turn_PWM; // 加上转动角速度值
+  // R_PWM += turn_PWM;
+  L_PWM = constrain(L_PWM, -200, 200);
+  R_PWM = constrain(R_PWM, -200, 200);
+    if (AngleX > 45 || AngleX < -45)
+    { // 小车倾角过大，已倒下，停止转动；
+        motor_0.move(0);
+        motor_1.move(0);
+    }
+    else
+    {
+      target_angle_1 = static_cast<float>(L_PWM) / 180 * 3.14; // 把陀螺仪MPU6050获得的角度转换为弧度赋值给电机
+      target_angle_2 = static_cast<float>(R_PWM) / 180 * 3.14;
+      if (PWM > 0)
+      {
+          target_angle_1 = target_angle_1 + leftMotorOffset; // 加上电机死区扭矩
+          target_angle_2 = target_angle_2 + rightMotorOffset;
+      }
+      if (PWM < 0)
+      {
+          target_angle_1 = target_angle_1 - leftMotorOffset; // 反向转动也需要加上电机死区
+          target_angle_2 = target_angle_2 - rightMotorOffset;
+      }
+      motor_0.move(target_angle_1); // 实际这是扭矩值
+      motor_1.move(target_angle_2);
+    }
+   Serial.println(target_angle_1);
+   Serial.println(target_angle_2);
+  // motor_0.move(0.1);
+  // motor_1.move(0.1);
   // command.run(); // 监控输入的命令
 }
