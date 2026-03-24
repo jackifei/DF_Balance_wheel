@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>平衡小车控制器</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background-color: #f4f4f4;
+      padding: 20px 10px;
+      margin: 0;
+    }
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+      background: white;
+      padding: 25px 20px;
+      border-radius: 16px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    }
+    h2 {
+      color: #2c3e50;
+      margin-bottom: 10px;
+    }
+    .device-info {
+      color: #7f8c8d;
+      font-size: 14px;
+      margin-bottom: 25px;
+    }
+    .status-panel {
+      background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+      border: 2px solid #dee2e6;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 25px;
+      text-align: left;
+    }
+    .status-panel h3 {
+      margin-top: 0;
+      color: #495057;
+      text-align: center;
+      border-bottom: 2px dashed #adb5bd;
+      padding-bottom: 10px;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 20px;
+    }
+    .status-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .status-label {
+      font-size: 13px;
+      color: #6c757d;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .status-value {
+      font-size: 18px;
+      font-weight: bold;
+      color: #212529;
+      font-family: 'Courier New', monospace;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #ced4da;
+      min-height: 24px;
+    }
+    .connection-status {
+      padding: 15px;
+      border-radius: 10px;
+      margin: 20px 0;
+      font-weight: bold;
+      text-align: center;
+      transition: all 0.4s ease;
+    }
+    .connected {
+      background-color: #d4edda;
+      color: #0f5132;
+      border: 2px solid #c3e6cb;
+    }
+    .disconnected {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 2px solid #f5c6cb;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.7; }
+      100% { opacity: 1; }
+    }
+    .control-section {
+      margin: 30px 0;
+    }
+    .section-title {
+      color: #495057;
+      margin: 0 0 18px 0;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #dee2e6;
+      text-align: left;
+      font-size: 1.2em;
+    }
+    .btn-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin: 20px 0;
+    }
+    .btn {
+      padding: 15px 10px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn:hover:not(:disabled) {
+      transform: translateY(-3px);
+      box-shadow: 0 5px 12px rgba(0,0,0,0.15);
+    }
+    .btn:active:not(:disabled) {
+      transform: translateY(-1px);
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-motion { background-color: #3498db; color: white; }
+    .btn-motion:hover:not(:disabled) { background-color: #2980b9; }
+    .btn-balance { background-color: #2ecc71; color: white; }
+    .btn-balance:hover:not(:disabled) { background-color: #27ae60; }
+    .btn-turn { background-color: #9b59b6; color: white; }
+    .btn-turn:hover:not(:disabled) { background-color: #8e44ad; }
+    .btn-adjust { background-color: #e67e22; color: white; }
+    .btn-adjust:hover:not(:disabled) { background-color: #d35400; }
+    .btn-pid { background-color: #34495e; color: white; }
+    .btn-pid:hover:not(:disabled) { background-color: #2c3e50; }
+    .refresh-btn {
+      width: 100%;
+      background-color: #1abc9c;
+      color: white;
+      font-size: 16px;
+      padding: 16px;
+      margin-top: 10px;
+    }
+    .refresh-btn:hover:not(:disabled) { background-color: #16a085; }
+    .key-hint {
+      font-size: 12px;
+      color: #95a5a6;
+      margin-top: 5px;
+      font-style: italic;
+    }
+    .hint-box {
+      background-color: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 8px;
+      padding: 12px 15px;
+      margin-top: 25px;
+      text-align: left;
+      font-size: 14px;
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🤖 ESP32 平衡小车控制器</h2>
+    <p class="device-info">目标设备: 192.168.4.1 | Wi-Fi: BalanceCar_AP</p>
+
+    <!-- 连接状态 -->
+    <div class="connection-status disconnected" id="connectionStatus">
+      🔄 正在连接至平衡小车...
+    </div>
+    <button class="btn refresh-btn" onclick="manualRefresh()" id="manualRefreshBtn">🔄 手动刷新状态</button>
+
+    <!-- 状态显示面板 -->
+    <div class="status-panel">
+      <h3>📊 实时状态</h3>
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="status-label">当前平衡角</span>
+          <span class="status-value" id="statusKeepAngle">--</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">基准平衡角</span>
+          <span class="status-value" id="statusBalanceAngleRaw">--</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">直立 P (Kp)</span>
+          <span class="status-value" id="statusKp">--</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">直立 I (Ki)</span>
+          <span class="status-value" id="statusKi">--</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">直立 D (Kd)</span>
+          <span class="status-value" id="statusKd">--</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">转向 P (T_Kp)</span>
+          <span class="status-value" id="statusTurnKp">--</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">转向目标速度</span>
+          <span class="status-value" id="statusTurnSpd">--</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">运行模式</span>
+          <span class="status-value" id="statusMode">--</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 运动控制 -->
+    <div class="control-section">
+      <h3 class="section-title">🚗 运动控制</h3>
+      <div class="btn-group">
+        <button class="btn btn-motion" onclick="sendCmd('f')">前进<br><span class="key-hint">命令: F</span></button>
+        <button class="btn btn-balance" onclick="sendCmd('s')">平衡<br><span class="key-hint">命令: S</span></button>
+        <button class="btn btn-motion" onclick="sendCmd('b')">后退<br><span class="key-hint">命令: B</span></button>
+      </div>
+    </div>
+
+    <!-- 转向控制 -->
+    <div class="control-section">
+      <h3 class="section-title">🔄 转向控制</h3>
+      <div class="btn-group">
+        <button class="btn btn-turn" onclick="sendCmd('l')">左转<br><span class="key-hint">命令: L</span></button>
+        <button class="btn btn-turn" onclick="sendCmd('z')">停转<br><span class="key-hint">命令: Z</span></button>
+        <button class="btn btn-turn" onclick="sendCmd('r')">右转<br><span class="key-hint">命令: R</span></button>
+      </div>
+    </div>
+
+    <!-- 角度调整 -->
+    <div class="control-section">
+      <h3 class="section-title">📐 平衡角微调</h3>
+      <div class="btn-group">
+        <button class="btn btn-adjust" onclick="sendCmd('u')">角度 +0.01<br><span class="key-hint">命令: U</span></button>
+        <button class="btn btn-adjust" onclick="sendCmd('d')">角度 -0.01<br><span class="key-hint">命令: D</span></button>
+      </div>
+    </div>
+
+    <!-- PID 调整 -->
+    <div class="control-section">
+      <h3 class="section-title">⚙️ 直立 PID 调整</h3>
+      <div class="btn-group">
+        <button class="btn btn-pid" onclick="sendCmd('0')">Kp -0.1<br><span class="key-hint">命令: 0</span></button>
+        <button class="btn btn-pid" onclick="sendCmd('1')">Kp +0.1<br><span class="key-hint">命令: 1</span></button>
+        <button class="btn btn-pid" onclick="sendCmd('2')">Ki -0.01<br><span class="key-hint">命令: 2</span></button>
+        <button class="btn btn-pid" onclick="sendCmd('3')">Ki +0.01<br><span class="key-hint">命令: 3</span></button>
+        <button class="btn btn-pid" onclick="sendCmd('4')">Kd -0.01<br><span class="key-hint">命令: 4</span></button>
+        <button class="btn btn-pid" onclick="sendCmd('5')">Kd +0.01<br><span class="key-hint">命令: 5</span></button>
+      </div>
+    </div>
+
+    <!-- 转向P调整 -->
+    <div class="control-section">
+      <h3 class="section-title">🎯 转向 P 调整</h3>
+      <div class="btn-group">
+        <button class="btn btn-pid" onclick="sendCmd('6')">转向P -0.01<br><span class="key-hint">命令: 6</span></button>
+        <button class="btn btn-pid" onclick="sendCmd('7')">转向P +0.01<br><span class="key-hint">命令: 7</span></button>
+      </div>
+    </div>
+
+    <div class="hint-box">
+      <strong>使用提示：</strong><br>
+      1. 确保您的设备已连接到 <strong>BalanceCar_AP</strong> 网络。<br>
+      2. 页面将自动连接并刷新状态（500ms）。<br>
+      3. 点击任意按钮后，状态将自动更新。
+    </div>
+  </div>
+
+  <script>
+    // 服务器地址 - 与ESP32 AP模式IP一致
+    const SERVER_BASE_URL = 'http://192.168.4.1';
+    const STATUS_ENDPOINT = `${SERVER_BASE_URL}/status`;
+    const CMD_ENDPOINT = `${SERVER_BASE_URL}/cmd`;
+
+    // 获取DOM元素
+    const connectionStatusEl = document.getElementById('connectionStatus');
+    const manualRefreshBtn = document.getElementById('manualRefreshBtn');
+    
+    // 状态显示元素
+    const statusElements = {
+      keepAngle: document.getElementById('statusKeepAngle'),
+      balanceAngleRaw: document.getElementById('statusBalanceAngleRaw'),
+      kp: document.getElementById('statusKp'),
+      ki: document.getElementById('statusKi'),
+      kd: document.getElementById('statusKd'),
+      turnKp: document.getElementById('statusTurnKp'),
+      turnSpd: document.getElementById('statusTurnSpd'),
+      mode: document.getElementById('statusMode')
+    };
+
+    // 运行模式映射
+    const modeMap = {
+      's': '<span style="color:#27ae60;">原地平衡</span>',
+      'f': '<span style="color:#3498db;">前进</span>',
+      'b': '<span style="color:#e74c3c;">后退</span>',
+      'l': '<span style="color:#9b59b6;">左转</span>',
+      'r': '<span style="color:#9b59b6;">右转</span>',
+      'z': '<span style="color:#7f8c8d;">停转</span>'
+    };
+
+    let autoRefreshInterval = null;
+    let isConnected = false;
+    let connectionRetries = 0;
+    const MAX_RETRIES = 3;
+
+    // 启动自动刷新状态
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      autoRefreshInterval = setInterval(fetchStatus, 500);
+      console.log('自动状态刷新已启动 (500ms)');
+    }
+
+    // 停止自动刷新
+    function stopAutoRefresh() {
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+      }
+    }
+
+    // 手动刷新状态
+    function manualRefresh() {
+      fetchStatus(true);
+    }
+
+    // 更新状态显示
+    function updateStatusDisplay(data) {
+      statusElements.keepAngle.textContent = data.Keep_Angle.toFixed(3);
+      statusElements.balanceAngleRaw.textContent = data.Balance_Angle_raw.toFixed(3);
+      statusElements.kp.textContent = data.kp.toFixed(3);
+      statusElements.ki.textContent = data.ki.toFixed(3);
+      statusElements.kd.textContent = data.kd.toFixed(3);
+      statusElements.turnKp.textContent = data.turn_kp.toFixed(3);
+      statusElements.turnSpd.textContent = data.turn_spd.toFixed(1);
+      statusElements.mode.innerHTML = modeMap[data.flag] || data.flag;
+    }
+
+    // 获取并更新状态
+    async function fetchStatus(isManual = false) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+        const response = await fetch(STATUS_ENDPOINT, {
+          method: 'GET',
+          cache: 'no-cache',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        updateStatusDisplay(data);
+        connectionRetries = 0;
+        
+        if (!isConnected) {
+          isConnected = true;
+          connectionStatusEl.innerHTML = `✅ 已连接到平衡小车<br><small>IP: ${SERVER_BASE_URL} | 自动刷新中</small>`;
+          connectionStatusEl.className = 'connection-status connected';
+          manualRefreshBtn.disabled = false;
+          console.log('成功连接到小车');
+        }
+        return true;
+        
+      } catch (error) {
+        connectionRetries++;
+        console.warn(`连接尝试失败 (${connectionRetries}/${MAX_RETRIES}):`, error.message);
+        
+        isConnected = false;
+        connectionStatusEl.innerHTML = `❌ 连接失败 (${connectionRetries}/${MAX_RETRIES})<br><small>请确认已连接至 Wi-Fi: BalanceCar_AP</small>`;
+        connectionStatusEl.className = 'connection-status disconnected';
+        manualRefreshBtn.disabled = false;
+        
+        // 清空状态显示
+        Object.values(statusElements).forEach(el => {
+          if (el.id !== 'statusMode') {
+            el.textContent = '--';
+          } else {
+            el.innerHTML = '--';
+          }
+        });
+        
+        // 自动重连逻辑
+        if (connectionRetries < MAX_RETRIES && !isManual) {
+          setTimeout(() => fetchStatus(), 2000);
+        } else if (isManual) {
+          alert(`无法连接到小车。\n1. 请确认设备已连接到 Wi-Fi "BalanceCar_AP"\n2. 确认小车已上电\n3. 小车IP应为: ${SERVER_BASE_URL}`);
+        }
+        return false;
+      }
+    }
+
+    // 发送控制命令
+    async function sendCmd(cmd) {
+      if (!isConnected) {
+        alert('未连接到小车，请先建立连接。');
+        return;
+      }
+      
+      const url = `${CMD_ENDPOINT}?c=${encodeURIComponent(cmd)}`;
+      console.log(`发送命令: ${cmd} -> ${url}`);
+      
+      // 临时禁用所有按钮防止重复点击
+      const allButtons = document.querySelectorAll('.btn');
+      allButtons.forEach(btn => btn.disabled = true);
+      
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          cache: 'no-cache',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`命令失败: ${response.status}`);
+        }
+        
+        const result = await response.text();
+        console.log(`命令响应: ${result}`);
+        
+        // 命令发送成功，短暂延迟后刷新状态
+        setTimeout(() => {
+          fetchStatus();
+          allButtons.forEach(btn => btn.disabled = false);
+        }, 200);
+        
+      } catch (error) {
+        console.error('发送命令时出错:', error);
+        alert(`命令发送失败: ${error.message}`);
+        allButtons.forEach(btn => btn.disabled = false);
+        fetchStatus();
+      }
+    }
+
+    // 页面加载完成后初始化
+    window.addEventListener('load', () => {
+      console.log('平衡小车控制器已加载');
+      connectionStatusEl.textContent = '正在连接至平衡小车...';
+      
+      // 初始连接尝试
+      fetchStatus().then(connected => {
+        if (connected) {
+          startAutoRefresh();
+        }
+      });
+      
+      // 页面关闭前停止定时器
+      window.addEventListener('beforeunload', () => {
+        stopAutoRefresh();
+      });
+    });
+  </script>
+</body>
+</html>
